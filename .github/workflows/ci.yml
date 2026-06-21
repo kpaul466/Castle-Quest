@@ -1,0 +1,68 @@
+name: Citadel Build & Publish CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci || npm install
+
+      - name: Run Type Check & Verification (Linter)
+        run: npm run lint
+
+      - name: Compile and Build Static Production Bundle
+        run: npm run build
+
+      - name: Upload Compiled Production Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: citadel-production-bundle
+          path: dist/
+          retention-days: 7
+
+  # Optional Auto-Deploy step to GitHub Pages
+  # To enable this, ensure your repository has GitHub Pages enabled from its Settings
+  # and point it to the 'github-pages' source branch, or customize as required.
+  deploy-github-pages:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Install Project Dependencies
+        run: npm ci || npm install
+
+      - name: Compile and Build Static Production Bundle
+        run: npm run build
+
+      - name: Deploy Production Build to GitHub Pages Branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: dist
+          branch: gh-pages
+          clean: true
