@@ -1,0 +1,6 @@
+{
+  "name": "Castle Knight 3D Game",
+  "description": "A fully functional 3D action-adventure game featuring a detailed fort, a hero knight, a quest to rescue the princess, gargoyles, hounds, a golem, mobile-friendly touch joysticks, as well as traps.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
