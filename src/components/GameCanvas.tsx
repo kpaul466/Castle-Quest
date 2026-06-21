@@ -94,9 +94,14 @@ export default function GameCanvas() {
 
   // Mobile Joy Coordinates
   const [joystickActive, setJoystickActive] = useState(false);
+  const joystickActiveRef = useRef(false);
   const joystickCenter = useRef({ x: 0, y: 0 });
   const joystickOffset = useRef({ x: 0, y: 0 });
   const joystickDir = useRef({ x: 0, y: 0 }); // Normalized -1 to 1
+
+  // Collapsible mobile-friendly Panels (responsive defaults)
+  const [isHudCollapsed, setIsHudCollapsed] = useState(window.innerWidth < 768);
+  const [isMinimapCollapsed, setIsMinimapCollapsed] = useState(window.innerWidth < 768);
 
   // Push messages to HUD log
   const pushLog = (msg: string) => {
@@ -514,17 +519,26 @@ export default function GameCanvas() {
         }
 
         // Joystick triggers (override keyboard forward/turn velocities)
-        if (joystickActive) {
-          // turn character towards travel stick layout direction smoothly
-          const angle = Math.atan2(joystickDir.current.x, joystickDir.current.y);
-          const currentYaw = cameraAngleYaw.current; // sync joystick direction to look perspective
-          
-          hero.rotation.y = currentYaw + angle;
-          
-          // constant joystick movement speed
-          const stickMag = Math.sqrt(joystickDir.current.x**2 + joystickDir.current.y**2);
-          moveX = Math.sin(hero.rotation.y) * stickMag;
-          moveZ = Math.cos(hero.rotation.y) * stickMag;
+        if (joystickActiveRef.current) {
+          // Calculate movement direction relative to camera perspective
+          const forwardX = Math.sin(cameraAngleYaw.current);
+          const forwardZ = Math.cos(cameraAngleYaw.current);
+          const rightX = Math.cos(cameraAngleYaw.current);
+          const rightZ = -Math.sin(cameraAngleYaw.current);
+
+          const joyX = joystickDir.current.x;
+          // Negative because top/forwards on mobile screens is negative Y drag
+          const joyY = -joystickDir.current.y; 
+
+          const stickMag = Math.min(1.0, Math.sqrt(joyX * joyX + joyY * joyY));
+
+          if (stickMag > 0.05) {
+            moveX = (forwardX * joyY + rightX * joyX) * stickMag;
+            moveZ = (forwardZ * joyY + rightZ * joyX) * stickMag;
+
+            // Rotate character mesh facing the direction of movement smoothly
+            hero.rotation.y = Math.atan2(moveX, moveZ);
+          }
         }
 
         // Apply velocities on floor axes
@@ -1203,14 +1217,14 @@ export default function GameCanvas() {
 
   // Mobile Joy Stick callbacks
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    e.preventDefault();
     const touch = e.touches[0];
     joystickCenter.current = { x: touch.clientX, y: touch.clientY };
     setJoystickActive(true);
+    joystickActiveRef.current = true;
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!joystickActive) return;
+    if (!joystickActiveRef.current) return;
     const touch = e.touches[0];
     const dx = touch.clientX - joystickCenter.current.x;
     const dy = touch.clientY - joystickCenter.current.y;
@@ -1235,19 +1249,28 @@ export default function GameCanvas() {
 
   const handleTouchEnd = () => {
     setJoystickActive(false);
+    joystickActiveRef.current = false;
     joystickOffset.current = { x: 0, y: 0 };
     joystickDir.current = { x: 0, y: 0 };
   };
 
   // Keyboard action simulation on clicks for mobile HUD overlays
-  const triggerMobileAttack = () => {
+  const triggerMobileAttack = (e?: React.TouchEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (heroIsAttacking.current) return;
     heroIsAttacking.current = true;
     heroAttackTimer.current = 0.28;
     soundFX.playSlash();
   };
 
-  const triggerMobileJump = () => {
+  const triggerMobileJump = (e?: React.TouchEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (heroIsJumping.current) return;
     heroIsJumping.current = true;
     heroVelocity.current.y = 11;
@@ -1375,147 +1398,185 @@ export default function GameCanvas() {
                     </div>
                   ))}
                 </div>
-              </div>
+                             {/* STATS AND QUEST FLOATING BOX */}
+               {isHudCollapsed ? (
+                 <button 
+                   id="btn_expand_hud"
+                   onClick={() => setIsHudCollapsed(false)}
+                   className="absolute right-6 top-6 bg-slate-900/90 border border-slate-705/80 backdrop-blur-md px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-1.5 shadow-2xl pointer-events-auto hover:bg-slate-800 transition active:scale-95 cursor-pointer z-10 animate-pulse"
+                 >
+                   🛡️ <span className="text-red-400 font-sans font-bold">HP: {stats.health}%</span>
+                   <span className="text-slate-500 text-[10px] sm:inline hidden">• Expand Stats</span>
+                 </button>
+               ) : (
+                 <div id="knight_hud_panel" className="absolute right-6 top-6 bg-slate-900/95 backdrop-blur-md p-4 rounded-xl border border-slate-800 shadow-2xl w-72 pointer-events-auto z-10 transition-all">
+                   <div className="flex items-center justify-between mb-3 border-b border-slate-800 pb-1.5 text-slate-400">
+                     <span className="text-[10px] font-bold tracking-wider uppercase">📊 Citadel Stats</span>
+                     <button 
+                       onClick={() => setIsHudCollapsed(true)}
+                       className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-755 text-slate-400 hover:text-white transition cursor-pointer"
+                     >
+                       Hide
+                     </button>
+                   </div>
 
-              {/* STATS AND QUEST FLOATING BOX */}
-              <div id="knight_hud_panel" className="absolute right-6 top-6 bg-slate-900/85 backdrop-blur-md p-4 rounded-xl border border-slate-800 shadow-2xl w-72 pointer-events-auto">
-                {/* Hero Health Bar */}
-                <div className="mb-4">
-                  <div className="flex justify-between text-xs font-semibold mb-1">
-                    <span className="text-red-400 flex items-center gap-1">🛡️ Knight Health</span>
-                    <span className="font-mono text-red-300">{stats.health} / {stats.maxHealth} HP</span>
-                  </div>
-                  <div className="w-full h-3.5 rounded-full bg-slate-800 p-0.5 overflow-hidden">
-                    <div 
-                      className="h-full rounded-full bg-red-600 transition-all duration-150 relative overflow-hidden"
-                      style={{ width: `${stats.health}%` }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-rose-600 animate-pulse" />
-                    </div>
-                  </div>
-                </div>
+                   {/* Hero Health Bar */}
+                   <div className="mb-4">
+                     <div className="flex justify-between text-xs font-semibold mb-1">
+                       <span className="text-red-400 flex items-center gap-1">🛡️ Knight Health</span>
+                       <span className="font-mono text-red-300">{stats.health} / {stats.maxHealth} HP</span>
+                     </div>
+                     <div className="w-full h-3.5 rounded-full bg-slate-800 p-0.5 overflow-hidden">
+                       <div 
+                         className="h-full rounded-full bg-red-600 transition-all duration-150 relative overflow-hidden"
+                         style={{ width: `${stats.health}%` }}
+                       >
+                         <div className="absolute inset-0 bg-gradient-to-r from-red-500 to-rose-600 animate-pulse" />
+                       </div>
+                     </div>
+                   </div>
 
-                {/* Potions stock & Usage */}
-                <div className="mb-4 flex items-center justify-between border-b border-b-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🧪 Potions:</span>
-                    <span className="bg-red-950 text-red-400 px-2.5 py-0.5 rounded font-bold text-xs ring-1 ring-red-800/60 font-mono">
-                      {stats.potions}
-                    </span>
-                  </div>
-                  <button
-                    id="btn_potion_use"
-                    onClick={handleUsePotion}
-                    disabled={stats.potions <= 0}
-                    className={`px-3 py-1.5 rounded text-xs font-semibold select-none flex items-center gap-1 shadow-lg cursor-pointer ${
-                      stats.potions > 0 
-                        ? 'bg-rose-600 hover:bg-rose-500 text-white animate-bounce' 
-                        : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Heal (Key H)
-                  </button>
-                </div>
+                   {/* Potions stock & Usage */}
+                   <div className="mb-4 flex items-center justify-between border-b border-slate-800 pb-3">
+                     <div className="flex items-center gap-2">
+                       <span className="text-sm">🧪 Potions:</span>
+                       <span className="bg-red-950 text-red-400 px-2.5 py-0.5 rounded font-bold text-xs ring-1 ring-red-800/60 font-mono">
+                         {stats.potions}
+                       </span>
+                     </div>
+                     <button
+                       id="btn_potion_use"
+                       onClick={handleUsePotion}
+                       disabled={stats.potions <= 0}
+                       className={`px-3 py-1.5 rounded text-xs font-semibold select-none flex items-center gap-1 shadow-lg cursor-pointer ${
+                         stats.potions > 0 
+                           ? 'bg-rose-600 hover:bg-rose-500 text-white animate-bounce' 
+                           : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                       }`}
+                     >
+                       <Sparkles className="w-3.5 h-3.5" />
+                       Heal (Key H)
+                     </button>
+                   </div>
 
-                {/* Quests objectives checklist */}
-                <div>
-                  <h3 className="text-xs font-semibold text-slate-400 tracking-wider mb-2.5">ACTIVE QUEST OBJECTIVES</h3>
-                  <div className="space-y-2 text-xs font-semibold font-mono">
-                    <div className="flex items-center gap-2">
-                      <span className={questLog.houndCount >= questLog.houndTotal ? 'text-emerald-400' : 'text-slate-400'}>
-                        {questLog.houndCount >= questLog.houndTotal ? '✓' : '○'}
-                      </span>
-                      <span className={questLog.houndCount >= questLog.houndTotal ? 'line-through text-slate-500' : 'text-slate-300'}>
-                        Dungeon Shadow Hounds: ({questLog.houndCount}/{questLog.houndTotal})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={questLog.golemDefeated ? 'text-emerald-400' : 'text-slate-400'}>
-                        {questLog.golemDefeated ? '✓' : '○'}
-                      </span>
-                      <span className={questLog.golemDefeated ? 'line-through text-slate-500' : 'text-slate-300'}>
-                        Defeat the Throne Golem Boss
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-pink-400">♥</span>
-                      <span className="text-pink-300 animate-pulse font-sans">
-                        Ascend Spire & Rescue Princess!
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                   {/* Quests objectives checklist */}
+                   <div>
+                     <h3 className="text-xs font-semibold text-slate-400 tracking-wider mb-2.5">ACTIVE QUEST OBJECTIVES</h3>
+                     <div className="space-y-2 text-xs font-semibold font-mono">
+                       <div className="flex items-center gap-2">
+                         <span className={questLog.houndCount >= questLog.houndTotal ? 'text-emerald-400' : 'text-slate-400'}>
+                           {questLog.houndCount >= questLog.houndTotal ? '✓' : '○'}
+                         </span>
+                         <span className={questLog.houndCount >= questLog.houndTotal ? 'line-through text-slate-500' : 'text-slate-300'}>
+                           Dungeon Hounds: ({questLog.houndCount}/{questLog.houndTotal})
+                         </span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         <span className={questLog.golemDefeated ? 'text-emerald-400' : 'text-slate-400'}>
+                           {questLog.golemDefeated ? '✓' : '○'}
+                         </span>
+                         <span className={questLog.golemDefeated ? 'line-through text-slate-500' : 'text-slate-300'}>
+                           Defeat Throne Golem
+                         </span>
+                       </div>
+                       <div className="flex items-center gap-2">
+                         <span className="text-pink-400">♥</span>
+                         <span className="text-pink-300 animate-pulse font-sans">
+                           Rescue Princess Rosalind!
+                         </span>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               )}
 
-              {/* INTERACTIVE MINIMAP SYSTEM PANEL */}
-              <div id="minimap_hud_wrapper" className="absolute right-6 top-[282px] bg-slate-900/85 backdrop-blur-md p-3.5 rounded-xl border border-slate-800 shadow-2xl w-72 pointer-events-auto flex flex-col items-center gap-2.5">
-                
-                {/* Visual Header with shape switcher & zoom controls */}
-                <div className="w-full flex items-center justify-between text-xs font-mono text-slate-400 select-none">
-                  <span className="flex items-center gap-1 font-bold text-slate-300">
-                    <Compass className="w-3.5 h-3.5 text-pink-500 animate-pulse" />
-                    Citadel Minimap
-                  </span>
-                  
-                  <div className="flex items-center gap-1.5">
-                    <button 
-                      id="btn_minimap_zoom_out"
-                      onClick={() => setMinimapZoom(prev => Math.max(0.8, prev - 0.2))}
-                      className="p-1 rounded bg-slate-850 border border-slate-700/30 text-slate-300 hover:bg-slate-705 hover:text-white transition cursor-pointer"
-                      title="Zoom Out"
-                    >
-                      <ZoomIn className="w-3 h-3 rotate-180" />
-                    </button>
-                    <button 
-                      id="btn_minimap_zoom_in"
-                      onClick={() => setMinimapZoom(prev => Math.min(3.0, prev + 0.2))}
-                      className="p-1 rounded bg-slate-850 border border-slate-700/30 text-slate-300 hover:bg-slate-705 hover:text-white transition cursor-pointer"
-                      title="Zoom In"
-                    >
-                      <ZoomIn className="w-3 h-3" />
-                    </button>
-                    <button 
-                      id="btn_minimap_format"
-                      onClick={() => setMinimapMode(prev => prev === 'CIRCLE' ? 'SQUARE' : 'CIRCLE')}
-                      className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-850 hover:bg-slate-700 hover:text-white select-none capitalize transition cursor-pointer"
-                      title="Toggle Shape"
-                    >
-                      {minimapMode.toLowerCase()}
-                    </button>
-                  </div>
-                </div>
+               {/* INTERACTIVE MINIMAP SYSTEM PANEL */}
+               {isMinimapCollapsed ? (
+                 <button 
+                   id="btn_expand_minimap"
+                   onClick={() => setIsMinimapCollapsed(false)}
+                   className="absolute right-6 top-16 bg-slate-900/90 border border-slate-705/80 backdrop-blur-md px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 flex items-center gap-1.5 shadow-2xl pointer-events-auto hover:bg-slate-800 transition active:scale-95 cursor-pointer z-10"
+                 >
+                   🧭 <span className="font-sans font-bold">Minimap</span>
+                   <span className="text-slate-500 text-[10px] sm:inline hidden">• Expand Map</span>
+                 </button>
+               ) : (
+                 <div id="minimap_hud_wrapper" className="absolute right-6 top-16 sm:top-[282px] bg-slate-900/95 backdrop-blur-md p-3.5 rounded-xl border border-slate-800 shadow-2xl w-72 pointer-events-auto flex flex-col items-center gap-2.5 z-10 transition-all">
+                   
+                   {/* Visual Header with shape switcher & zoom controls */}
+                   <div className="w-full flex items-center justify-between text-xs font-mono text-slate-400 select-none">
+                     <span className="flex items-center gap-1 font-bold text-slate-300">
+                       <Compass className="w-3.5 h-3.5 text-pink-500 animate-pulse" />
+                       Citadel Minimap
+                     </span>
+                     
+                     <div className="flex items-center gap-1.5">
+                       <button 
+                         id="btn_minimap_zoom_out"
+                         onClick={() => setMinimapZoom(prev => Math.max(0.8, prev - 0.2))}
+                         className="p-1 rounded bg-slate-850 border border-slate-700/30 text-slate-300 hover:bg-slate-705 hover:text-white transition cursor-pointer"
+                         title="Zoom Out"
+                       >
+                         <ZoomIn className="w-3 h-3 rotate-180" />
+                       </button>
+                       <button 
+                         id="btn_minimap_zoom_in"
+                         onClick={() => setMinimapZoom(prev => Math.min(3.0, prev + 0.2))}
+                         className="p-1 rounded bg-slate-850 border border-slate-700/30 text-slate-300 hover:bg-slate-705 hover:text-white transition cursor-pointer"
+                         title="Zoom In"
+                       >
+                         <ZoomIn className="w-3 h-3" />
+                       </button>
+                       <button 
+                         id="btn_minimap_format"
+                         onClick={() => setMinimapMode(prev => prev === 'CIRCLE' ? 'SQUARE' : 'CIRCLE')}
+                         className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-850 hover:bg-slate-700 hover:text-white select-none capitalize transition cursor-pointer"
+                         title="Toggle Shape"
+                       >
+                         {minimapMode.toLowerCase()}
+                       </button>
+                       <button 
+                         onClick={() => setIsMinimapCollapsed(true)}
+                         className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+                         title="Collapse Minimap"
+                       >
+                         ✕
+                       </button>
+                     </div>
+                   </div>
 
-                {/* Main canvas viewport */}
-                <div className={`overflow-hidden border border-slate-750 shadow-inner relative bg-slate-950 transition-all duration-300 ${
-                  minimapMode === 'CIRCLE' ? 'rounded-full' : 'rounded-lg'
-                }`} style={{ width: '130px', height: '130px' }}>
-                  <canvas 
-                    ref={minimapCanvasRef} 
-                    width={130} 
-                    height={130} 
-                    className="w-full h-full block" 
-                  />
-                  <div className="absolute top-1 left-2 pointer-events-none font-mono text-[8px] text-slate-400 font-bold tracking-wide">
-                    {Math.round(minimapZoom * 100)}%
-                  </div>
-                </div>
+                   {/* Main canvas viewport */}
+                   <div className={`overflow-hidden border border-slate-750 shadow-inner relative bg-slate-950 transition-all duration-300 ${
+                     minimapMode === 'CIRCLE' ? 'rounded-full' : 'rounded-lg'
+                   }`} style={{ width: '130px', height: '130px' }}>
+                     <canvas 
+                       ref={minimapCanvasRef} 
+                       width={130} 
+                       height={130} 
+                       className="w-full h-full block" 
+                     />
+                     <div className="absolute top-1 left-2 pointer-events-none font-mono text-[8px] text-slate-400 font-bold tracking-wide">
+                       {Math.round(minimapZoom * 100)}%
+                     </div>
+                   </div>
 
-                {/* Map Legend */}
-                <div className="w-full flex items-center justify-between text-[9px] font-semibold text-slate-400 tracking-wider">
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> You
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" /> Beast
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> Potions
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-pink-500 inline-block animate-pulse" /> Goal
-                  </span>
-                </div>
+                   {/* Map Legend */}
+                   <div className="w-full flex items-center justify-between text-[9px] font-semibold text-slate-400 tracking-wider">
+                     <span className="flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> You
+                     </span>
+                     <span className="flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" /> Beast
+                     </span>
+                     <span className="flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> Potions
+                     </span>
+                     <span className="flex items-center gap-1">
+                       <span className="w-1.5 h-1.5 rounded-full bg-pink-500 inline-block animate-pulse" /> Goal
+                     </span>
+                   </div>
+                 </div>
+               )}
               </div>
 
               {/* FLOATING ACTION KEYS GUIDE */}
@@ -1529,7 +1590,7 @@ export default function GameCanvas() {
               </div>
 
               {/* VIRTUAL MOBILE CONTROLLER OVERLAYS (Shown on touch displays) */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col justify-end p-6 select-none">
+              <div className="absolute inset-0 pointer-events-none flex flex-col justify-end p-4 sm:p-6 select-none">
                 <div className="flex items-center justify-between pointer-events-auto">
                   
                   {/* JOYSTICK CONTROLLER BOX (Bottom Left) */}
@@ -1537,14 +1598,15 @@ export default function GameCanvas() {
                     id="mobile_joystick_region"
                     onMouseDown={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
-                      joystickCenter.current = { x: rect.left + 64, y: rect.top + 64 };
+                      joystickCenter.current = { x: rect.left + 56, y: rect.top + 56 };
                       setJoystickActive(true);
+                      joystickActiveRef.current = true;
                     }}
                     onMouseMove={(e) => {
-                      if (!joystickActive) return;
+                      if (!joystickActiveRef.current) return;
                       const dx = e.clientX - joystickCenter.current.x;
                       const dy = e.clientY - joystickCenter.current.y;
-                      const limit = 44;
+                      const limit = 40;
                       const dist = Math.sqrt(dx*dx + dy*dy);
                       if (dist === 0) {
                         joystickOffset.current = { x: 0, y: 0 };
@@ -1557,43 +1619,62 @@ export default function GameCanvas() {
                     }}
                     onMouseUp={() => {
                       setJoystickActive(false);
+                      joystickActiveRef.current = false;
                       joystickOffset.current = { x: 0, y: 0 };
                       joystickDir.current = { x: 0, y: 0 };
                     }}
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
-                    className="w-32 h-32 rounded-full bg-slate-900/60 border border-slate-700 backdrop-blur-md relative flex items-center justify-center cursor-pointer shadow-inner active:border-emerald-600/70"
+                    className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-slate-900/70 border border-slate-700/80 backdrop-blur-md relative flex items-center justify-center cursor-pointer shadow-2xl active:border-emerald-500/70"
                   >
                     <div 
-                      className="absolute w-12 h-12 rounded-full bg-emerald-500/80 shadow-lg border border-emerald-400 pointer-events-none"
+                      className="absolute w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-500/80 shadow-lg border border-emerald-400 pointer-events-none"
                       style={{
                         transform: `translate(${joystickOffset.current.x}px, ${joystickOffset.current.y}px)`,
-                        transition: joystickActive ? 'none' : 'transform 100s ease-out'
+                        transition: joystickActive ? 'none' : 'transform 0.1s ease-out'
                       }}
                     />
-                    <span className="text-[8px] font-bold text-slate-500 absolute bottom-2 select-none pointer-events-none">DRAG JOYSTICK</span>
+                    <span className="text-[7px] sm:text-[8px] font-bold text-slate-500 absolute bottom-1.5 sm:bottom-2 select-none pointer-events-none">DRAG JOYSTICK</span>
                   </div>
 
                   {/* MOBILE ACTION BUTTONS BOX (Bottom Right) */}
-                  <div className="flex gap-4 items-end">
+                  <div className="flex gap-2.5 sm:gap-4 items-end">
+                    {/* Heal Potion Trigger Button */}
+                    <button
+                      id="btn_mobile_heal"
+                      onTouchStart={(e) => { e.preventDefault(); handleUsePotion(); }}
+                      onClick={handleUsePotion}
+                      disabled={stats.potions <= 0}
+                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full border text-white font-bold flex flex-col items-center justify-center select-none shadow-lg active:scale-90 transition cursor-pointer ${
+                        stats.potions > 0 
+                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-500/90 animate-pulse' 
+                          : 'bg-slate-900/80 border-slate-700 text-slate-500 cursor-not-allowed opacity-50'
+                      }`}
+                      title="Drink Potion Flask"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 mb-0.5" />
+                      <span className="text-[8px] sm:text-[9px]">HEAL ({stats.potions})</span>
+                    </button>
+
                     {/* Jump/Dodge block trigger */}
                     <button
                       id="btn_mobile_jump"
-                      onTouchStart={(e) => { e.preventDefault(); triggerMobileJump(); }}
-                      onClick={triggerMobileJump}
-                      className="w-16 h-16 rounded-full bg-slate-900/80 border border-slate-700 text-slate-300 font-bold flex items-center justify-center select-none shadow-lg active:scale-90 active:bg-slate-800 transition cursor-pointer"
+                      onTouchStart={(e) => { triggerMobileJump(e); }}
+                      onClick={(e) => triggerMobileJump(e)}
+                      className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-slate-900/85 border border-slate-700 text-slate-300 font-bold flex items-center justify-center select-none shadow-lg active:scale-90 active:bg-slate-800 transition cursor-pointer text-xs sm:text-sm"
                     >
                       JUMP
                     </button>
+
                     {/* Primary Slash attack buttons */}
                     <button
                       id="btn_mobile_attack"
-                      onTouchStart={(e) => { e.preventDefault(); triggerMobileAttack(); }}
-                      onClick={triggerMobileAttack}
-                      className="w-20 h-20 rounded-full bg-red-600 border border-red-500 text-white font-bold flex flex-col items-center justify-center select-none shadow-lg active:scale-95 active:bg-red-500 transition cursor-pointer"
+                      onTouchStart={(e) => { triggerMobileAttack(e); }}
+                      onClick={(e) => triggerMobileAttack(e)}
+                      className="w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-red-600 border border-red-500 text-white font-bold flex flex-col items-center justify-center select-none shadow-2xl active:scale-95 active:bg-red-500 transition cursor-pointer text-sm"
                     >
-                      <Swords className="w-5 h-5 mb-0.5" />
+                      <Swords className="w-4 h-4 sm:w-5 sm:h-5 mb-0.5" />
                       <span>SLASH</span>
                     </button>
                   </div>
