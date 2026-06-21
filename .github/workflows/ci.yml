@@ -10,8 +10,17 @@ on:
       - main
       - master
 
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queue.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build-and-test:
@@ -36,33 +45,22 @@ jobs:
       - name: Compile and Build Static Production Bundle
         run: npm run build
 
-      - name: Upload Compiled Production Build Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Static Artifact for Pages
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: citadel-production-bundle
           path: dist/
-          retention-days: 7
 
-  # Optional Auto-Deploy step to GitHub Pages
-  # To enable this, ensure your repository has GitHub Pages enabled from its Settings
-  # and point it to the 'github-pages' source branch, or customize as required.
+  # Deploy job using the official GitHub Pages deployment action
+  # This registers a native GitHub Page deployment environment,
+  # displaying a gorgeous clickable live URL directly inside your GitHub Actions panel!
   deploy-github-pages:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code Repository
-        uses: actions/checkout@v4
-
-      - name: Install Project Dependencies
-        run: npm ci || npm install
-
-      - name: Compile and Build Static Production Bundle
-        run: npm run build
-
-      - name: Deploy Production Build to GitHub Pages Branch
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: dist
-          branch: gh-pages
-          clean: true
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
